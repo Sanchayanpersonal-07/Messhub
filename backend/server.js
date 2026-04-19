@@ -33,7 +33,13 @@ const app = express();
 
 /* ========== SECURITY MIDDLEWARE ========== */
 
-app.use(helmet());
+// ✅ FIX: crossOriginResourcePolicy set to "cross-origin"
+// so /uploads images can be loaded by the frontend (different port = cross-origin)
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 
 app.use(
   cors({

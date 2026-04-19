@@ -1,13 +1,16 @@
 import express from "express";
 import { verifyToken, allowRoles } from "../middleware/authMiddleware.js";
 import * as manager from "../controllers/managerController.js";
+import User from "../models/User.js";
 
 const router = express.Router();
 
 // ✅ FIX: removed custom requireManager, using allowRoles("manager") consistently
+/* Meals */
 router.get("/meals", verifyToken, allowRoles("manager"), manager.getMeals);
 router.post("/meals", verifyToken, allowRoles("manager"), manager.saveMeal);
 
+/* Feedback */
 router.get(
   "/feedback",
   verifyToken,
@@ -27,6 +30,7 @@ router.delete(
   manager.deleteFeedback,
 );
 
+/* Duties */
 router.get("/duties", verifyToken, allowRoles("manager"), manager.getAllDuties);
 router.get(
   "/duty-reports",
@@ -40,10 +44,15 @@ router.get(
   verifyToken,
   allowRoles("manager"),
   async (req, res) => {
-    const students = await User.find({ role: "student" })
-      .select("_id name email")
-      .lean();
-    res.json(students);
+    try {
+      const students = await User.find({ role: "student" })
+        .select("_id name email roll_number")
+        .sort({ name: 1 })
+        .lean();
+      res.json(students);
+    } catch (err) {
+      next(err);
+    }
   },
 );
 
