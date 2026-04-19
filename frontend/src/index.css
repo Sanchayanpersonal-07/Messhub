@@ -1,0 +1,245 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Playfair+Display:wght@600;700;800&display=swap");
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 40 33% 98%;
+    --foreground: 220 20% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 14%;
+
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 30% 94%;
+    --secondary-foreground: 220 20% 14%;
+
+    --muted: 40 20% 95%;
+    --muted-foreground: 220 10% 46%;
+
+    --accent: 160 50% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 15% 89%;
+    --input: 40 15% 89%;
+    --ring: 25 95% 53%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 220 20% 14%;
+    --sidebar-foreground: 40 20% 95%;
+    --sidebar-primary: 25 95% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 20%;
+    --sidebar-accent-foreground: 40 20% 95%;
+    --sidebar-border: 220 15% 22%;
+    --sidebar-ring: 25 95% 53%;
+
+    /* Custom tokens */
+    --warning: 45 93% 47%;
+    --warning-foreground: 0 0% 100%;
+    --success: 160 50% 45%;
+    --success-foreground: 0 0% 100%;
+    --info: 210 80% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --font-display: "Playfair Display", serif;
+    --font-body: "DM Sans", sans-serif;
+  }
+
+  .dark {
+    --background: 220 20% 10%;
+    --foreground: 40 20% 95%;
+    --card: 220 18% 13%;
+    --card-foreground: 40 20% 95%;
+    --popover: 220 18% 13%;
+    --popover-foreground: 40 20% 95%;
+    --primary: 25 95% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 18%;
+    --secondary-foreground: 40 20% 95%;
+    --muted: 220 15% 18%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 160 50% 45%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 40 20% 95%;
+    --border: 220 15% 22%;
+    --input: 220 15% 22%;
+    --ring: 25 95% 53%;
+    --sidebar-background: 220 22% 8%;
+    --sidebar-foreground: 40 20% 95%;
+    --sidebar-primary: 25 95% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 15% 14%;
+    --sidebar-accent-foreground: 40 20% 95%;
+    --sidebar-border: 220 15% 16%;
+    --sidebar-ring: 25 95% 53%;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-body);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply backdrop-blur-md shadow-xl;
+    background-color: hsl(var(--card) / 0.8);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .gradient-primary {
+    background-image: linear-gradient(135deg, hsl(25 95% 53%), hsl(35 95% 58%));
+  }
+
+  .gradient-primary.bg-clip-text {
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-sidebar {
+    background: linear-gradient(180deg, hsl(220 20% 14%), hsl(220 22% 10%));
+  }
+
+  /* Force colors to render properly in Tailwind 4 */
+  .text-primary {
+    color: hsl(var(--primary)) !important;
+  }
+
+  .text-accent {
+    color: hsl(var(--accent)) !important;
+  }
+
+  .hover\:text-accent:hover {
+    color: hsl(var(--accent)) !important;
+  }
+
+  .hover-accent:hover {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    border-color: hsl(var(--accent));
+  }
+
+  .link-primary {
+    color: hsl(var(--primary));
+  }
+
+  .link-primary:hover {
+    color: hsl(var(--primary) / 0.9);
+  }
+  .btn-primary {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+  .btn-primary:hover {
+    background-color: hsl(var(--primary) / 0.9);
+  }
+
+  .btn-destructive {
+    background-color: hsl(var(--destructive));
+    color: hsl(var(--destructive-foreground));
+  }
+  .btn-destructive:hover {
+    background-color: hsl(var(--destructive) / 0.9);
+  }
+
+  .btn-secondary {
+    background-color: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
+  .btn-secondary:hover {
+    background-color: hsl(var(--secondary) / 0.8);
+  }
+
+  .btn-outline {
+    border: 1px solid hsl(var(--input));
+    background-color: hsl(var(--background));
+  }
+  .btn-outline:hover {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    border-color: hsl(var(--accent));
+  }
+
+  .btn-ghost:hover {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+
+  .btn-link {
+    color: hsl(var(--primary));
+    text-underline-offset: 4px;
+  }
+  .btn-link:hover {
+    text-decoration: underline;
+  }
+
+  .input-placeholder::placeholder {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .input-file::file-selector-button {
+    color: hsl(var(--foreground));
+    background: transparent;
+    border: 0;
+    font-weight: 500;
+  }
+
+  .input-focus:focus-visible {
+    box-shadow: 0 0 0 2px hsl(var(--ring));
+  }
+
+  .select-item-focus:focus {
+    background-color: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.4s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.5s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
