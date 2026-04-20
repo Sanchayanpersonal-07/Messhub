@@ -1,8 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import api from "@/services/axiosInstance";
 import { AxiosError } from "axios";
+import {
+  startRegistration,
+  startAuthentication,
+} from "@simplewebauthn/browser";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
   Fingerprint,
@@ -14,6 +19,9 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ShieldCheck,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import dayjs from "dayjs";
 
@@ -37,6 +45,11 @@ interface MonthlySummary {
   lunch: number;
   dinner: number;
   total: number;
+}
+
+interface WebAuthnStatus {
+  registered: boolean;
+  registered_at: string | null;
 }
 
 /* ── Meal config ── */
@@ -73,6 +86,11 @@ const MEALS = [
 type ScanState = "idle" | "scanning" | "success" | "already";
 
 export default function StudentAttendance() {
+  /* ── State ── */
+  const [webAuthnStatus, setWebAuthnStatus] = useState<WebAuthnStatus | null>(
+    null,
+  );
+  const [registering, setRegistering] = useState(false);
   const [scanState, setScanState] = useState<Record<string, ScanState>>({
     breakfast: "idle",
     lunch: "idle",
@@ -83,8 +101,18 @@ export default function StudentAttendance() {
   const [currentMonth, setCurrentMonth] = useState(dayjs().format("YYYY-MM"));
   const [loading, setLoading] = useState(true);
 
-  /* fetch today's marked status */
-  const fetchTodayStatus = async () => {
+  /* ── Fetch WebAuthn registration status ── */
+  const fetchWebAuthnStatus = useCallback(async () => {
+    try {
+      const res = await api.get<WebAuthnStatus>("/attendance/webauthn/status");
+      setWebAuthnStatus(res.data);
+    } catch {
+      /* silent */
+    }
+  }, []);
+
+  /* ── Fetch today's marked status ── */
+  const fetchTodayStatus = useCallback(async () => {
     try {
       const res = await api.get<{ marked: MarkedToday }>("/attendance/check");
       const newState = {
@@ -97,12 +125,12 @@ export default function StudentAttendance() {
       });
       setScanState(newState);
     } catch {
-      // silently fail
+      /* silent */
     }
-  };
+  }, []);
 
-  /* fetch monthly history */
-  const fetchHistory = async (month: string) => {
+  /* ── Fetch monthly history ── */
+  const fetchHistory = useCallback(async (month: string) => {
     setLoading(true);
     try {
       const res = await api.get<{
@@ -116,32 +144,115 @@ export default function StudentAttendance() {
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchTodayStatus();
-    // fetchHistory is handled by the [currentMonth] effect below (runs on mount too)
   }, []);
 
   useEffect(() => {
-    fetchHistory(currentMonth);
-  }, [currentMonth]);
+    fetchWebAuthnStatus();
+    fetchTodayStatus();
+  }, [fetchWebAuthnStatus, fetchTodayStatus]);
 
-  /* fingerprint scan */
+  useEffect(() => {
+    fetchHistory(currentMonth);
+  }, [currentMonth, fetchHistory]);
+
+  /* ════════════════════════════════════════════════════
+     🖐️  FINGERPRINT REGISTRATION
+     একবার করলেই হবে — পরে প্রতিটা scan এ use হবে
+  ════════════════════════════════════════════════════ */
+  const handleRegisterFingerprint = async () => {
+    setRegistering(true);
+    try {
+      // Step 1: Server থেকে registration options নাও
+      const optionsRes = await api.get("/attendance/webauthn/register-options");
+
+      // Step 2: Browser এর fingerprint prompt দেখাও
+      // এখানে phone/laptop এর biometric sensor activate হবে
+      let registrationResponse;
+      try {
+        registrationResponse = await startRegistration({
+          optionsJSON: optionsRes.data,
+        });
+      } catch (browserErr: unknown) {
+        const err = browserErr as { name?: string; message?: string };
+        if (err.name === "NotAllowedError") {
+          toast.error("Fingerprint scan cancelled. Please try again.");
+        } else if (err.name === "NotSupportedError") {
+          toast.error(
+            "Your device doesn't support fingerprint. Please use a device with biometric sensor.",
+          );
+        } else {
+          toast.error(err.message || "Fingerprint registration failed.");
+        }
+        return;
+      }
+
+      // Step 3: Server এ verify করো + save করো
+      await api.post(
+        "/attendance/webauthn/register-verify",
+        registrationResponse,
+      );
+
+      toast.success(
+        "🎉 Fingerprint registered! You can now scan for attendance.",
+      );
+      await fetchWebAuthnStatus();
+    } catch (err) {
+      const msg = (err as AxiosError<{ msg?: string }>)?.response?.data?.msg;
+      toast.error(msg || "Registration failed. Please try again.");
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  /* ════════════════════════════════════════════════════
+     🖐️  FINGERPRINT SCAN FOR ATTENDANCE
+     প্রতিটা meal এর সময় করতে হবে
+  ════════════════════════════════════════════════════ */
   const handleScan = async (meal_type: string) => {
     const state = scanState[meal_type];
     if (state === "already" || state === "scanning" || state === "success")
       return;
 
+    // Fingerprint register করা না থাকলে — register করতে বলো
+    if (!webAuthnStatus?.registered) {
+      toast.error("Please register your fingerprint first.");
+      return;
+    }
+
     setScanState((p) => ({ ...p, [meal_type]: "scanning" }));
-    await new Promise((r) => setTimeout(r, 1500)); // simulate fingerprint read
 
     try {
-      await api.post("/attendance/scan", { meal_type });
+      // Step 1: Server থেকে auth challenge নাও
+      const optionsRes = await api.get("/attendance/webauthn/auth-options");
+
+      // Step 2: Phone এর fingerprint prompt দেখাও
+      let authResponse;
+      try {
+        authResponse = await startAuthentication({
+          optionsJSON: optionsRes.data,
+        });
+      } catch (browserErr: unknown) {
+        const err = browserErr as { name?: string; message?: string };
+        if (err.name === "NotAllowedError") {
+          toast.error("Fingerprint scan cancelled.");
+        } else {
+          toast.error(err.message || "Fingerprint scan failed.");
+        }
+        setScanState((p) => ({ ...p, [meal_type]: "idle" }));
+        return;
+      }
+
+      // Step 3: Server এ verify করো + attendance mark করো
+      await api.post("/attendance/webauthn/auth-verify", {
+        meal_type,
+        authResponse,
+      });
+
       setScanState((p) => ({ ...p, [meal_type]: "success" }));
       toast.success(
-        `${meal_type.charAt(0).toUpperCase() + meal_type.slice(1)} attendance marked!`,
+        `✅ ${meal_type.charAt(0).toUpperCase() + meal_type.slice(1)} attendance marked!`,
       );
+
       setTimeout(() => {
         setScanState((p) => ({ ...p, [meal_type]: "already" }));
         fetchHistory(currentMonth);
@@ -150,14 +261,15 @@ export default function StudentAttendance() {
       const msg = (err as AxiosError<{ msg?: string }>)?.response?.data?.msg;
       if (msg?.includes("already marked")) {
         setScanState((p) => ({ ...p, [meal_type]: "already" }));
+        toast.info("Attendance already marked for this meal.");
       } else {
         setScanState((p) => ({ ...p, [meal_type]: "idle" }));
-        toast.error(msg || "Scan failed");
+        toast.error(msg || "Scan failed. Please try again.");
       }
     }
   };
 
-  /* month navigation */
+  /* ── Month navigation ── */
   const prevMonth = () =>
     setCurrentMonth(dayjs(currentMonth).subtract(1, "month").format("YYYY-MM"));
   const nextMonth = () => {
@@ -166,7 +278,7 @@ export default function StudentAttendance() {
   };
   const isCurrentMonth = currentMonth === dayjs().format("YYYY-MM");
 
-  /* group history by date */
+  /* ── Group history by date ── */
   const grouped = history.reduce<Record<string, AttendanceRecord[]>>(
     (acc, r) => {
       if (!acc[r.date]) acc[r.date] = [];
@@ -190,7 +302,7 @@ export default function StudentAttendance() {
 
   return (
     <DashboardLayout>
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold font-display flex items-center gap-2">
           <Fingerprint className="h-6 w-6" />
@@ -201,12 +313,107 @@ export default function StudentAttendance() {
         </p>
       </div>
 
-      {/* Today scan cards */}
+      {/* ══════════════════════════════════════════════════
+          🖐️  Fingerprint Registration Banner
+          Register করা না থাকলে এই banner দেখাবে
+      ══════════════════════════════════════════════════ */}
+      {webAuthnStatus !== null && !webAuthnStatus.registered && (
+        <div
+          className="mb-6 rounded-xl p-4 flex items-start gap-4"
+          style={{
+            backgroundColor: "rgba(245,158,11,0.08)",
+            border: "1.5px solid rgba(245,158,11,0.3)",
+          }}
+        >
+          <AlertTriangle
+            className="h-5 w-5 mt-0.5 shrink-0"
+            style={{ color: "#f59e0b" }}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm" style={{ color: "#f59e0b" }}>
+              Fingerprint Not Registered
+            </p>
+            <p
+              className="text-xs mt-0.5"
+              style={{ color: "hsl(var(--muted-foreground))" }}
+            >
+              Register your fingerprint once to mark attendance. Your actual
+              fingerprint is never stored — only a secure cryptographic key.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleRegisterFingerprint}
+            disabled={registering}
+            className="shrink-0 gap-2"
+            style={{
+              background: "linear-gradient(to right, #f59e0b, #d97706)",
+              color: "#fff",
+            }}
+          >
+            {registering ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Fingerprint className="h-3.5 w-3.5" />
+            )}
+            {registering ? "Scanning..." : "Register Fingerprint"}
+          </Button>
+        </div>
+      )}
+
+      {/* ── Fingerprint registered badge ── */}
+      {webAuthnStatus?.registered && (
+        <div
+          className="mb-6 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3"
+          style={{
+            backgroundColor: "hsl(var(--accent) / 0.08)",
+            border: "1px solid hsl(var(--accent) / 0.25)",
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <ShieldCheck
+              className="h-4 w-4"
+              style={{ color: "hsl(var(--accent))" }}
+            />
+            <p
+              className="text-sm font-medium"
+              style={{ color: "hsl(var(--accent))" }}
+            >
+              Fingerprint registered
+              {webAuthnStatus.registered_at && (
+                <span
+                  className="ml-2 font-normal text-xs"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
+                  since{" "}
+                  {dayjs(webAuthnStatus.registered_at).format("DD MMM YYYY")}
+                </span>
+              )}
+            </p>
+          </div>
+          {/* Re-register option */}
+          <button
+            onClick={handleRegisterFingerprint}
+            disabled={registering}
+            className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70"
+            style={{ color: "hsl(var(--muted-foreground))" }}
+          >
+            <RefreshCw className="h-3 w-3" />
+            Re-register
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════
+          Meal scan cards
+      ══════════════════════════════════════════════════ */}
       <div className="grid gap-4 sm:grid-cols-3 mb-8">
         {MEALS.map((meal) => {
           const state = scanState[meal.key];
           const isScanning = state === "scanning";
           const isDone = state === "already" || state === "success";
+          const isDisabled =
+            isDone || isScanning || !webAuthnStatus?.registered;
 
           return (
             <Card
@@ -248,21 +455,22 @@ export default function StudentAttendance() {
                   )}
                 </div>
 
-                {/* Fingerprint button */}
+                {/* Fingerprint scan button */}
                 <button
                   onClick={() => handleScan(meal.key)}
-                  disabled={isDone || isScanning}
+                  disabled={isDisabled}
                   className="w-full rounded-xl py-6 flex flex-col items-center gap-2 transition-all"
                   style={{
                     backgroundColor: isDone
                       ? meal.bgColor
-                      : "hsl(var(--muted) / 0.5)",
-                    border: `1.5px solid ${isDone ? meal.borderColor : "hsl(var(--border))"}`,
-                    cursor: isDone
-                      ? "default"
-                      : isScanning
-                        ? "wait"
-                        : "pointer",
+                      : !webAuthnStatus?.registered
+                        ? "hsl(var(--muted) / 0.3)"
+                        : "hsl(var(--muted) / 0.5)",
+                    border: `1.5px solid ${
+                      isDone ? meal.borderColor : "hsl(var(--border))"
+                    }`,
+                    cursor: isDisabled ? "default" : "pointer",
+                    opacity: !webAuthnStatus?.registered ? 0.5 : 1,
                   }}
                 >
                   {/* Icon */}
@@ -285,7 +493,7 @@ export default function StudentAttendance() {
                     )}
                   </div>
 
-                  {/* Status label */}
+                  {/* Status text */}
                   <span
                     className="text-xs font-semibold"
                     style={{
@@ -297,12 +505,14 @@ export default function StudentAttendance() {
                     }}
                   >
                     {isScanning
-                      ? "Scanning fingerprint..."
+                      ? "Place finger on sensor..."
                       : state === "success"
                         ? "✓ Verified!"
                         : isDone
                           ? "Already Marked"
-                          : "Tap to Scan"}
+                          : !webAuthnStatus?.registered
+                            ? "Register fingerprint first"
+                            : "Tap to Scan"}
                   </span>
 
                   {isScanning && (
@@ -318,7 +528,9 @@ export default function StudentAttendance() {
         })}
       </div>
 
-      {/* Monthly summary + history */}
+      {/* ══════════════════════════════════════════════════
+          Monthly summary + history (unchanged)
+      ══════════════════════════════════════════════════ */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Summary */}
         <div className="space-y-3">
@@ -373,7 +585,6 @@ export default function StudentAttendance() {
                   </span>
                 </div>
               ))}
-
               <div
                 className="flex items-center justify-between rounded-xl px-3 py-2.5"
                 style={{ backgroundColor: "hsl(var(--muted))" }}
