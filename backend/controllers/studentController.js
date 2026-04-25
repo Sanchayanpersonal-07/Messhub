@@ -33,9 +33,14 @@ export const getTodayMeals = async (req, res, next) => {
 
 export const getAttendance = async (req, res, next) => {
   try {
+    // ✅ FIX: month filter + limit — no unbounded query
+    const month = req.query.month || new Date().toISOString().slice(0, 7);
     const attendance = await Attendance.find({
       student_id: req.user.id,
-    }).lean();
+      date: { $regex: `^${month}` },
+    })
+      .sort({ date: -1, meal_type: 1 })
+      .lean();
     res.json(attendance);
   } catch (err) {
     next(err);

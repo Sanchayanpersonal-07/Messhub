@@ -170,13 +170,15 @@ export default function WardenDutyReports() {
         .includes(search.toLowerCase()),
   );
 
+  // ✅ FIX: hygiene_score and quantity_score are optional in model — guard against undefined/NaN
   const avgHygiene =
     reports.length > 0
-      ? reports.reduce((s, r) => s + r.hygiene_score, 0) / reports.length
+      ? reports.reduce((s, r) => s + (r.hygiene_score ?? 0), 0) / reports.length
       : 0;
   const avgQuantity =
     reports.length > 0
-      ? reports.reduce((s, r) => s + r.quantity_score, 0) / reports.length
+      ? reports.reduce((s, r) => s + (r.quantity_score ?? 0), 0) /
+        reports.length
       : 0;
   const avgOverall = reports.length > 0 ? (avgHygiene + avgQuantity) / 2 : 0;
 

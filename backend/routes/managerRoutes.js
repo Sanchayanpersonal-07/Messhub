@@ -43,7 +43,7 @@ router.get(
   "/students",
   verifyToken,
   allowRoles("manager"),
-  async (req, res) => {
+  async (req, res, next) => {
     try {
       const students = await User.find({ role: "student" })
         .select("_id name email roll_number")

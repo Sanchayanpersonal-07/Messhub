@@ -13,27 +13,27 @@ dayjs.extend(isoWeek);
 ───────────────────────────────────────────────────────── */
 const INGREDIENT_RATIOS = {
   breakfast: {
-    "Rice/Bread (g)":   150,
-    "Dal (g)":          100,
-    "Vegetables (g)":   120,
-    "Oil (ml)":          15,
-    "Spices (g)":        10,
+    "Rice/Bread (g)": 150,
+    "Dal (g)": 100,
+    "Vegetables (g)": 120,
+    "Oil (ml)": 15,
+    "Spices (g)": 10,
   },
   lunch: {
-    "Rice (g)":         250,
-    "Dal (g)":          120,
-    "Vegetables (g)":   150,
-    "Roti (g)":         100,
-    "Oil (ml)":          20,
-    "Spices (g)":        15,
+    "Rice (g)": 250,
+    "Dal (g)": 120,
+    "Vegetables (g)": 150,
+    "Roti (g)": 100,
+    "Oil (ml)": 20,
+    "Spices (g)": 15,
   },
   dinner: {
-    "Rice (g)":         220,
-    "Dal (g)":          110,
-    "Vegetables (g)":   140,
-    "Roti (g)":         100,
-    "Oil (ml)":          18,
-    "Spices (g)":        12,
+    "Rice (g)": 220,
+    "Dal (g)": 110,
+    "Vegetables (g)": 140,
+    "Roti (g)": 100,
+    "Oil (ml)": 18,
+    "Spices (g)": 12,
   },
 };
 
@@ -70,9 +70,7 @@ export const getPrediction = async (req, res, next) => {
     const MEALS = ["breakfast", "lunch", "dinner"];
 
     // আজ থেকে WEEKS_BACK সপ্তাহ আগের date
-    const fromDate = dayjs()
-      .subtract(WEEKS_BACK, "week")
-      .format("YYYY-MM-DD");
+    const fromDate = dayjs().subtract(WEEKS_BACK, "week").format("YYYY-MM-DD");
     const toDate = dayjs().subtract(1, "day").format("YYYY-MM-DD"); // আজকের আগ পর্যন্ত
 
     // সব historical attendance আনি
@@ -140,9 +138,7 @@ export const getPrediction = async (req, res, next) => {
 
         // Non-zero values দিয়ে average নেওয়া better
         const nonZero = values.filter((v) => v > 0);
-        const predicted = nonZero.length > 0
-          ? weightedAverage(nonZero)
-          : 0;
+        const predicted = nonZero.length > 0 ? weightedAverage(nonZero) : 0;
 
         // 10% buffer যোগ করি wastage এড়াতে (safety margin)
         const withBuffer = Math.ceil(predicted * 1.1);
@@ -155,9 +151,11 @@ export const getPrediction = async (req, res, next) => {
             const total = withBuffer * gPerPerson;
             // kg/L তে convert করি যদি বড় হয়
             if (total >= 1000) {
-              ingredients[item] = `${(total / 1000).toFixed(1)} ${item.includes("ml") ? "L" : "kg"}`;
+              ingredients[item] =
+                `${(total / 1000).toFixed(1)} ${item.includes("ml") ? "L" : "kg"}`;
             } else {
-              ingredients[item] = `${total} ${item.includes("ml") ? "ml" : "g"}`;
+              ingredients[item] =
+                `${total} ${item.includes("ml") ? "ml" : "g"}`;
             }
           });
         }
@@ -165,10 +163,13 @@ export const getPrediction = async (req, res, next) => {
         // Historical data summary (কতটা confident)
         const dataPoints = nonZero.length;
         const confidence =
-          dataPoints >= 6 ? "high"
-          : dataPoints >= 3 ? "medium"
-          : dataPoints >= 1 ? "low"
-          : "no_data";
+          dataPoints >= 6
+            ? "high"
+            : dataPoints >= 3
+              ? "medium"
+              : dataPoints >= 1
+                ? "low"
+                : "no_data";
 
         mealPredictions[meal] = {
           predicted_count: predicted,
@@ -193,7 +194,7 @@ export const getPrediction = async (req, res, next) => {
         sum +
         Object.values(day.meals).reduce(
           (s, m) => s + (m.predicted_count || 0),
-          0
+          0,
         )
       );
     }, 0);
@@ -221,52 +222,51 @@ export const getPrediction = async (req, res, next) => {
 export const getPredictionAccuracy = async (req, res, next) => {
   try {
     const MEALS = ["breakfast", "lunch", "dinner"];
-    const WEEKS_CHECK = 4; // last 4 সপ্তাহের accuracy
+    const WEEKS_CHECK = 4;
+
+    const today = dayjs().format("YYYY-MM-DD");
+
+    // ✅ FIX: single query for all actuals in the check window (was 28 queries)
+    const checkFrom = dayjs()
+      .subtract(WEEKS_CHECK, "week")
+      .startOf("week")
+      .format("YYYY-MM-DD");
+    const historicalFrom = dayjs()
+      .subtract(WEEKS_CHECK + 8, "week")
+      .startOf("week")
+      .format("YYYY-MM-DD");
+
+    // One query: all attendance in check window + 8 weeks of history before it
+    const allAttendance = await Attendance.aggregate([
+      { $match: { date: { $gte: historicalFrom, $lt: today } } },
+      {
+        $group: {
+          _id: { date: "$date", meal_type: "$meal_type" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    // Build a single map for everything
+    const countMap = {};
+    allAttendance.forEach(({ _id, count }) => {
+      countMap[`${_id.date}__${_id.meal_type}`] = count;
+    });
 
     const rows = [];
 
     for (let w = 1; w <= WEEKS_CHECK; w++) {
       for (let d = 0; d < 7; d++) {
-        const date = dayjs()
-          .subtract(w, "week")
-          .startOf("week")
-          .add(d, "day");
+        const date = dayjs().subtract(w, "week").startOf("week").add(d, "day");
         const dateStr = date.format("YYYY-MM-DD");
 
-        if (dateStr >= dayjs().format("YYYY-MM-DD")) continue;
-
-        const weekdayNum = date.day();
-
-        // এই date এর actual attendance
-        const actuals = await Attendance.aggregate([
-          { $match: { date: dateStr } },
-          { $group: { _id: "$meal_type", count: { $sum: 1 } } },
-        ]);
-
-        const actualMap = {};
-        actuals.forEach(({ _id, count }) => {
-          actualMap[_id] = count;
-        });
-
-        // Predict করি (same algorithm, but for past dates)
-        const fromDate = date.subtract(8, "week").format("YYYY-MM-DD");
-        const historical = await Attendance.aggregate([
-          { $match: { date: { $gte: fromDate, $lt: dateStr } } },
-          {
-            $group: {
-              _id: { date: "$date", meal_type: "$meal_type" },
-              count: { $sum: 1 },
-            },
-          },
-        ]);
-
-        const countMap = {};
-        historical.forEach(({ _id, count }) => {
-          countMap[`${_id.date}__${_id.meal_type}`] = count;
-        });
+        if (dateStr >= today) continue;
 
         MEALS.forEach((meal) => {
-          // collect weekly counts for this weekday+meal
+          // Actual from our single map
+          const actual = countMap[`${dateStr}__${meal}`] || 0;
+
+          // Predict using 8 weeks of prior data
           const values = [];
           for (let pw = 1; pw <= 8; pw++) {
             const pastDate = date.subtract(pw, "week").format("YYYY-MM-DD");
@@ -274,7 +274,6 @@ export const getPredictionAccuracy = async (req, res, next) => {
           }
           const nonZero = values.filter((v) => v > 0);
           const predicted = nonZero.length > 0 ? weightedAverage(nonZero) : 0;
-          const actual = actualMap[meal] || 0;
 
           if (predicted > 0 || actual > 0) {
             rows.push({
@@ -286,7 +285,9 @@ export const getPredictionAccuracy = async (req, res, next) => {
               diff: actual - predicted,
               accuracy_pct:
                 predicted > 0
-                  ? Math.round((1 - Math.abs(actual - predicted) / predicted) * 100)
+                  ? Math.round(
+                      (1 - Math.abs(actual - predicted) / predicted) * 100,
+                    )
                   : null,
             });
           }
@@ -294,20 +295,19 @@ export const getPredictionAccuracy = async (req, res, next) => {
       }
     }
 
-    // Overall accuracy
     const withAccuracy = rows.filter((r) => r.accuracy_pct !== null);
     const avgAccuracy =
       withAccuracy.length > 0
         ? Math.round(
             withAccuracy.reduce((s, r) => s + r.accuracy_pct, 0) /
-              withAccuracy.length
+              withAccuracy.length,
           )
         : null;
 
     res.json({
       weeks_checked: WEEKS_CHECK,
       average_accuracy_pct: avgAccuracy,
-      rows: rows.slice(0, 50), // last 50 records
+      rows: rows.slice(0, 50),
     });
   } catch (err) {
     next(err);

@@ -120,48 +120,9 @@ export const saveMeal = async (req, res, next) => {
   }
 };
 
-export const updateMeal = async (req, res, next) => {
-  try {
-    // Fetch before-state to detect is_special change
-    const before = await Meal.findById(req.params.id).lean();
-    if (!before) return res.status(404).json({ msg: "Meal not found" });
-
-    // Only allow safe fields to be updated
-    const { items, is_special, special_note, meal_type, date } = req.body;
-    const updateData = {};
-    if (items !== undefined) updateData.items = items;
-    if (is_special !== undefined) updateData.is_special = Boolean(is_special);
-    if (special_note !== undefined) updateData.special_note = special_note;
-    if (meal_type !== undefined) updateData.meal_type = meal_type;
-    if (date !== undefined) updateData.date = date;
-
-    const meal = await Meal.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-    });
-
-    if (!meal) return res.status(404).json({ msg: "Meal not found" });
-
-    res.json(meal);
-
-    // Auto-notify only if is_special is being turned ON (was not special before)
-    const turningSpecial = Boolean(is_special) && !before.is_special;
-    if (turningSpecial) {
-      triggerSpecialMealNotification({ meal, managerId: req.user.id });
-    }
-  } catch (err) {
-    next(err);
-  }
-};
-
-export const deleteMeal = async (req, res, next) => {
-  try {
-    const meal = await Meal.findByIdAndDelete(req.params.id);
-    if (!meal) return res.status(404).json({ msg: "Meal not found" });
-    res.json({ msg: "Meal deleted" });
-  } catch (err) {
-    next(err);
-  }
-};
+// Note: updateMeal and deleteMeal are intentionally NOT exported.
+// Policy: Manager can only ADD meals. Menu changes go through Notifications.
+// See managerRoutes.js — no PUT/DELETE routes for meals.
 
 /* ================= FEEDBACK ================= */
 

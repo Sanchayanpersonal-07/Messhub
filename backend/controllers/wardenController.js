@@ -127,19 +127,28 @@ export const deleteDuty = async (req, res, next) => {
 export const getDutyReports = async (req, res, next) => {
   try {
     const { date } = req.query;
-    const match = date ? { duty_date: date } : {};
 
-    const reports = await DutyReport.find()
+    // ✅ FIX: filter at DB level via assignment_id lookup — not in memory
+    // First find matching assignment IDs if date filter given
+    let assignmentFilter = {};
+    if (date) {
+      const assignments = await DutyAssignment.find({ duty_date: date })
+        .select("_id")
+        .lean();
+      assignmentFilter = {
+        assignment_id: { $in: assignments.map((a) => a._id) },
+      };
+    }
+
+    const reports = await DutyReport.find(assignmentFilter)
       .populate({
         path: "assignment_id",
-        match,
         populate: { path: "student_id", select: "name department" },
       })
       .sort({ createdAt: -1 })
       .lean();
 
-    const filtered = reports.filter((r) => r.assignment_id);
-    res.json(filtered);
+    res.json(reports);
   } catch (err) {
     next(err);
   }
